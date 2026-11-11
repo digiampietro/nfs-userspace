@@ -1,78 +1,98 @@
-# NFSv2 User Space-Docker Image
+# NFSv2 Userspace Docker Image
 
-A docker image, for Linux, that implements the old NFSv2 protocol in user space. The reasons for this implementation are:
+A Docker image that provides a userspace implementation of the legacy NFSv2 protocol. It allows vintage and retro clients to mount directories exported by modern Linux distributions.
 
-- In the Linux kernel, since few years, the support for the NFSv2 protocol has been removed because of its potential security risks. This means that, in recent distributions, to bring back this protocol the kernel must be recompiled with appropriate options, but this isn't a viable solution for many user.
-- Some very old computers and equipments, still in use today, can use only the NFSv2 protocol to access shared storage.
-- In my case in a recent retro-computing project, involving the installation of the Linux SLS 1.02 ditribution, from 1993, I needed an NFSv2 server to simplify installation and access shared storage.
+This image is useful because:
 
-If the kernel doesn't support the NFSv2, the only viable alternative is a user-space implementation. A docker image uses the existing kernel, so inside Docker only a user-space implementation can work.
+- Recent Linux distributions often disable NFSv2 server support in their kernels, or omit it from their kernel builds. Re-enabling it may require rebuilding the kernel, which is not a practical solution for many users.
+- Some very old computers and devices still in use today can only access shared storage using NFSv2.
+- I needed an NFSv2 server for a recent retrocomputing project involving the installation of the Linux SLS 1.02 distribution from 1993. The server makes installation and access to shared storage easier.
 
-This docker image is based on
+When the host kernel does not support NFSv2, a userspace implementation is an alternative. Docker containers use the host's kernel, so this image runs the NFS server in userspace.
+
+This image is based on:
+
 - Debian Bullseye slim.
-- The very old [LINUX User-Space NFS Server](https://github.com/jgoerzen/nfs-user-server) (1998), that implements in user-space the NVFv2 procol and includes an NFS daemon (`rpc.nfsd`) a mount daemon (`rpc.mountd`) and `rpcbind`.
-- Some code taken and modified from [NFSv2 and TFTP service]( https://github.com/epics-containers/nfsv2-tftp-server) project
+- The very old [Linux User-Space NFS Server](https://github.com/jgoerzen/nfs-user-server) (1998), which implements NFSv2 in userspace. It includes an NFS daemon (`rpc.nfsd`), a mount daemon (`rpc.mountd`), and `rpcbind`.
+- Some code adapted from the [NFSv2 and TFTP service](https://github.com/epics-containers/nfsv2-tftp-server) project.
 
-Please note that higher NFS protocl versions, like versions `3` and `4` are not implemented, only NFSv2 is implemented and support both `udp` and `tcp` connections.
+This image supports only NFSv2; it does not implement NFSv3 or NFSv4. NFSv2 connections can use either UDP or TCP.
 
 ## Installation
 
-The prerequisite is the [Docker](https://www.docker.com/) installation. How to install Docker is outside this project scope, it is recommended to add your normal username to the `docker` group to be able to execute the Docker commands without need to be `root`. Probably [Podman](https://podman.io/) will work as well as Docker, but I havent tested it.
+Docker must be installed before using this image. Installing Docker is outside the scope of this project. To run Docker commands without `sudo`, you can add your regular user to the `docker` group. Be aware that membership in this group effectively grants root-level control over the host.
 
-- Clone this repository.
-- Buil the docker image.
-  ```bash
-  $ cd nfs-userspace/
-  $ ./dockbuild.sh
-  ```
+Podman may also work, but I have not tested it.
+
+1. Clone this repository.
+   ```bash
+   git clone https://github.com/digiampietro/nfs-userspace.git
+   ```
+2. Build the Docker image:
+
+   ```bash
+   cd nfs-userspace/
+   ./dockbuild.sh
+   ```
 
 ## Running
 
 ### Prerequisites
 
-The prerequisite is that to prevent conflicts you must not have other NFS services running. In an Ubuntu 24.04 distribution you can check with:
-```bash 
-$ sudo systemctl status nfs-kernel-server.service nfs-server.service
-```
-and, eventually, you can stop them with:
+To avoid conflicts, stop any other NFS server services before starting this container. On Ubuntu 24.04, check their status with:
+
 ```bash
-$ sudo systemctl stop nfs-kernel-server.service nfs-server.service
-```
-and disable them with:
-```bash
-$ sudo systemctl disable nfs-kernel-server.service nfs-server.service
+sudo systemctl status nfs-kernel-server.service nfs-server.service
 ```
 
-I you don't have the `rpcbind` service running it is fine because this service will run inside the container. If, instead, you have it running it is fine also because, in this case, the `rpcbind` inside the container will nost start and the NFS services will register themselves with the host `rpcbind`.
-If you want you can check if you have `rpcbind` running, in Ubuntu 24.04` with:
+If either service is running, stop it:
+
 ```bash
-$ sudo systemctl status rpcbind rpcbind.socket
+sudo systemctl stop nfs-kernel-server.service nfs-server.service
 ```
 
-### NFS sharing configuration
+If you do not want those services to start automatically, disable them:
 
-NFS sharing configuration is done in the same way as using the kernel based NFS service, modifying the `/etc/exports` configuration file. It is important to note that the options supported are the ones supported by this old user-space NFS server, you can check the [exports manpage](./exports.md).
-An example of an `/etc/exports` file is the following:
+```bash
+sudo systemctl disable nfs-kernel-server.service nfs-server.service
 ```
-/export/cd	    192.168.2.0/255.255.255.0(insecure,ro,all_squash,anonuid=0,anongid=0)
-/export/misc	192.168.2.0/255.255.255.0(insecure,rw,all_squash,sync,anonuid=1026,anongid=1026)
+
+This container uses the host network. There must be only one `rpcbind` instance on that network: if the host's `rpcbind` service is already running, the container shares it; otherwise, `rpcbind` starts inside the container.
+
+On Ubuntu 24.04, check whether `rpcbind` is running with:
+
+```bash
+sudo systemctl status rpcbind rpcbind.socket
+```
+
+### NFS export configuration
+
+Configure NFS exports in `/etc/exports`, just as you would when using the kernel NFS server. The available options depend on the old userspace NFS server. See the [`exports` man page](./exports.md) for details.
+
+Here is an example `/etc/exports` file:
+
+```text
+/export/cd     192.168.2.0/255.255.255.0(insecure,ro,all_squash,anonuid=0,anongid=0)
+/export/misc   192.168.2.0/255.255.255.0(insecure,rw,all_squash,sync,anonuid=1026,anongid=1026)
 ```
 
 In this example:
-- `192.168.2.0/255.255.255.0` means that only clients in this subnet can access the shared folder;
-- `insecure` allows connections from ports lower than `1024`;
-- `ro` read only, the client cannot modify files on the server;
-- `rw` read/write, the client can modify, remove and create files on the server;
-- `all_squash` every `userid` on the client side is mapped on the `anonuid` and `anongid` on the server side;
 
-The `/export/cd` is exported read/only and every user on the client side is mapped to the root user on the server side, this allows every user to read each files in this exported directory. Because it is exported read/only no file can be modified.
+- `192.168.2.0/255.255.255.0` allows clients on this subnet to access the export.
+- `insecure` allows requests from unprivileged source ports.
+- `ro` makes the export read-only.
+- `rw` allows clients to create, modify, and remove files.
+- `all_squash` maps every client user to the anonymous user and group specified by `anonuid` and `anongid`.
 
-The `/export/misc` is exported read/only and every user on the client side is mapped to the userid `1026` (my userid) on the server side, this simplify a lot the access to files from the client side where the userids don't match the server's userids.
+The `/export/cd` directory is exported read-only, and all client users are mapped to UID 0 and GID 0 on the server. Because the export is read-only, clients cannot modify its files.
 
-## Running the NFSv2 server
+The `/export/misc` directory is exported read/write, and all client users are mapped to UID 1026 and GID 1026 on the server. This can simplify file access when user IDs differ between the client and server.
 
-The server can be started from the downloaded folder `nfs-userspace` executing the script `./dockrun.sh` as in the following example:
-```bash
+## Starting the NFSv2 server
+
+From the cloned `nfs-userspace` directory, start the server by running `./dockrun.sh`. For example:
+
+```console
 valerio@ubu24:~/mygit/nfs-userspace$ ./dockrun.sh
 6218e1b205c0   digiampietro/nfs-userspace   "/bin/bash -c 'bash …"   5 hours ago   Up 5 hours                            nfs-userspace
 --- Stopping nfs-userspace
@@ -87,14 +107,22 @@ nfs-userspace
 0ca046039d7e322c19ad5e75cce0c6897ba47b923ebb9314712229738c485ab7
 ```
 
-This script:
-- It stops an already running docker container.
-- Starts itself mounting `/etc/exports` and the file sistems included in this file into the Docker container.
-- Prints the container id.
+The script:
 
-The container prints the content of `/var/log/syslog` to its standard output and this output can be inspected and monitored with:
+- Stops and removes any existing container named `nfs-userspace`.
+- Mounts `/etc/exports` and the directories listed in that file into the container.
+- Starts the container and prints its ID.
+
+The container writes its logs to `/var/log/syslog`. The log output is also sent to standard output and can be viewed with:
+
 ```bash
-valerio@ubu24:~/mygit/nfs-userspace$ docker logs -n 100 -f  nfs-userspace
+docker logs --tail 100 --follow nfs-userspace
+```
+
+For example:
+
+```console
+valerio@ubu24:~/mygit/nfs-userspace$ docker logs --tail 100 --follow nfs-userspace
 configuring NFSv2
 ...
 Starting enhanced syslogd: rsyslogd.
@@ -108,8 +136,9 @@ Nov 11 19:23:45 nfs-userspace mountd[56]: NFS mount of /export/cd attempted from
 Nov 11 19:23:45 nfs-userspace mountd[56]: /export/cd has been mounted by 192.168.2.23
 ```
 
-For further debugging it is possible to start an interactive shell inside the container:
-```bash
+To open an interactive shell in the container for debugging:
+
+```console
 valerio@ubu24:~/mygit/nfs-userspace$ docker exec -it nfs-userspace /bin/bash
 root@nfs-userspace:/# rpcinfo -p
    program vers proto   port  service
@@ -128,10 +157,11 @@ root@nfs-userspace:/# rpcinfo -p
 root@nfs-userspace:/#
 ```
 
-## On the client
+## Client example
 
-In the following example, a very old Linux, Linux SLS 1.02 from 1993 is successfully able to mount a folder from our Ubuntu 20.04 running our docker container:
-```bash
+The following example shows a very old Linux client successfully mounting an exported directory from an Ubuntu 20.04 host running this container:
+
+```console
 softland3:/# cat /etc/motd
 
 Welcome to Linux SLS 1.01. Type "menu" for a menu driven interface
@@ -153,7 +183,7 @@ drwxrwxrwx   4 root     other        2048 May 12  1993 interviews/
 drwxr-xr-x   2 root     other        4096 May 12  1993 lib/
 lrwxrwxrwx   1 root     other          13 May 12  1993 linux -> usr/src/linux/
 drwxr-xr-x   2 root     other        2048 May 12  1993 mnt/
-drwxr-xr-x   2 root     other        2048 May 12  1993 proc/
+drwxrwxrwx   2 root     other        2048 May 12  1993 proc/
 drwxrwxrwx   2 root     other        2048 May 12  1993 root/
 d---------  49 root     root         6144 May 12  1993 rr_moved/
 drwxrwxrwx   3 root     other        2048 May 12  1993 tmp/
@@ -165,8 +195,9 @@ softland3:/#
 
 ## Stopping the container
 
-The server can be stopped from the downloaded folder `nfs-userspace` executing the script `./dockrm.sh` as in the following example:
-```bash
+From the cloned `nfs-userspace` directory, stop and remove the container by running `./dockrm.sh`. For example:
+
+```console
 valerio@ubu24:~/mygit/nfs-userspace$ ./dockrm.sh
 edbbbe6eff9f   digiampietro/nfs-userspace   "/bin/bash -c 'bash …"   10 minutes ago   Up 10 minutes                            nfs-userspace
 --- Stopping nfs-userspace
